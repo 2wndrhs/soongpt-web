@@ -1,7 +1,7 @@
-import { CourseSelection, CourseType } from '../type/course.type.ts';
 import { Grade } from '../schemas/studentSchema.ts';
+import { CourseSelection, CourseType } from '../type/course.type.ts';
 
-export const courseSelection: { [key in CourseType]: CourseSelection } = {
+export const courseSelection: Record<CourseType, CourseSelection> = {
   majorRequired: {
     title: '이번 학기에 이수해야 하는\n전공필수과목이에요.',
     description: '잘못되었다면 이수할 과목만 선택해주세요!',

@@ -1,25 +1,27 @@
 import { AppScreen } from '@stackflow/plugin-basic-ui';
 import { ActivityComponentType } from '@stackflow/react';
+import _ from 'lodash';
+import { AnimatePresence, motion } from 'motion/react';
+import { useMemo, useState } from 'react';
 import AppBar from '../components/AppBar';
 import CourseListItem from '../components/CourseListItem.tsx';
-import { useState } from 'react';
-import { useFlow, useStepFlow } from '../stackflow.ts';
-import { AnimatePresence, motion } from 'motion/react';
-import { CourseType } from '../type/course.type.ts';
-import { courseSelection, gradeSelection } from '../data/courseSelection.ts';
 import GradeChip from '../components/GradeChip.tsx';
 import ViewSelectedCoursesButton from '../components/ViewSelectedCoursesButton.tsx';
 import { CourseListContext } from '../context/CourseListContext.ts';
+import { courseSelection, gradeSelection } from '../data/courseSelection.ts';
 import { useGetCourses } from '../hooks/useGetCourses.ts';
-import { Course } from '../schemas/courseSchema.ts';
-import { useMemo } from 'react';
-import _ from 'lodash';
-import { Grade } from '../schemas/studentSchema.ts';
 import { StudentMachineContext } from '../machines/studentMachine.ts';
+import { Course } from '../schemas/courseSchema.ts';
+import { Grade } from '../schemas/studentSchema.ts';
+import { useFlow, useStepFlow } from '../stackflow.ts';
+import { CourseType } from '../type/course.type.ts';
 
 interface CourseSelectionActivityParams {
   type: CourseType;
 }
+
+const isSameCourse = (a: Course, b: Course) =>
+  a.courseName === b.courseName && a.professorName === b.professorName;
 
 const CourseSelectionActivity: ActivityComponentType<CourseSelectionActivityParams> = ({
   params,
@@ -27,7 +29,7 @@ const CourseSelectionActivity: ActivityComponentType<CourseSelectionActivityPara
   const state = StudentMachineContext.useSelector((state) => state);
 
   const [selectedCourses, setSelectedCourses] = useState<Course[]>([]);
-  const [totalCredit, setTotalCredit] = useState<{ [K in CourseType]: number }>({
+  const [totalCredit, setTotalCredit] = useState<Record<CourseType, number>>({
     majorRequired: 0,
     majorElective: 0,
     generalRequired: 0,
@@ -37,19 +39,18 @@ const CourseSelectionActivity: ActivityComponentType<CourseSelectionActivityPara
   const { push } = useFlow();
 
   const onNextClick = () => {
-    console.log(selectedCourses);
-
-    if (courseSelection[params.type].next) {
+    const next = courseSelection[params.type].next;
+    if (next) {
       stepPush({
-        type: courseSelection[params.type].next,
-      } as CourseSelectionActivityParams);
+        type: next,
+      });
       return;
     }
 
     push('DesiredCreditActivity', {
       majorRequiredCourses: selectedCourses
-        .filter(({ classification }) => classification === 'MAJOR_REQUIRED')
-        .map(({ courseName }) => courseName),
+        .filter((course) => course.classification === 'MAJOR_REQUIRED')
+        .map((course) => course.courseName),
       majorElectiveCourses: selectedCourses
         .filter(({ classification }) => classification === 'MAJOR_ELECTIVE')
         .map(({ courseName }) => courseName),
@@ -61,28 +62,28 @@ const CourseSelectionActivity: ActivityComponentType<CourseSelectionActivityPara
   };
 
   const onClickCourseItem = (course: Course) => {
-    const credit =
-      courses.find(
-        ({ courseName, professorName }) =>
-          course.courseName === courseName && course.professorName === professorName,
-      )?.credit ?? 0;
+    const credit = courses.find((c) => isSameCourse(c, course))?.credit ?? 0;
 
     setSelectedCourses((prevState) => {
-      if (
-        prevState.find(
-          ({ courseName, professorName }) =>
-            course.courseName === courseName && course.professorName === professorName,
-        )
-      ) {
-        setTotalCredit({ ...totalCredit, [params.type]: totalCredit[params.type] - credit });
-        return prevState.filter(
-          ({ courseName, professorName }) =>
-            course.courseName !== courseName || course.professorName !== professorName,
-        );
+      const isSelected = prevState.some((c) => isSameCourse(c, course));
+
+      // 총 학점 업데이트
+      let newCredit = totalCredit[params.type];
+      if (isSelected) {
+        newCredit -= credit;
       } else {
-        setTotalCredit({ ...totalCredit, [params.type]: totalCredit[params.type] + credit });
-        return [...prevState, course];
+        newCredit += credit;
       }
+
+      setTotalCredit((prev) => ({
+        ...prev,
+        [params.type]: newCredit,
+      }));
+
+      // 선택된 과목 목록 업데이트
+      return isSelected
+        ? prevState.filter((c) => !isSameCourse(c, course))
+        : [...prevState, course];
     });
   };
 
@@ -102,7 +103,7 @@ const CourseSelectionActivity: ActivityComponentType<CourseSelectionActivityPara
   });
 
   const courses = useMemo<Course[]>(() => {
-    if (!data?.result) return [];
+    if (data === undefined) return [];
 
     const groupedCourses = _.groupBy(data.result, 'courseName');
 
@@ -110,7 +111,7 @@ const CourseSelectionActivity: ActivityComponentType<CourseSelectionActivityPara
       const baseData = { ...courses[0] };
 
       const professors = _.uniq(
-        _.map(courses, 'professorName').filter((name) => name && name.trim() !== ''),
+        _.map(courses, 'professorName').filter((name) => name.trim() !== ''),
       );
 
       baseData.professorName = professors.length > 0 ? professors.join(', ') : '';
@@ -127,7 +128,7 @@ const CourseSelectionActivity: ActivityComponentType<CourseSelectionActivityPara
     }
 
     return courses;
-  }, [data?.result, params.type, selectedGrades, state.context.department]);
+  }, [data, params.type, selectedGrades, state.context.department]);
 
   return (
     <AppScreen>
@@ -167,13 +168,7 @@ const CourseSelectionActivity: ActivityComponentType<CourseSelectionActivityPara
                       {courses.map((course) => (
                         <CourseListItem
                           onClickCourseItem={onClickCourseItem}
-                          isSelected={
-                            !!selectedCourses.find(
-                              ({ courseName, professorName }) =>
-                                course.courseName === courseName &&
-                                course.professorName === professorName,
-                            )
-                          }
+                          isSelected={selectedCourses.some((c) => isSameCourse(c, course))}
                           key={course.courseName}
                           course={course}
                         />
