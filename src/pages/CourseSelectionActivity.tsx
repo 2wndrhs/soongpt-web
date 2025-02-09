@@ -134,7 +134,7 @@ const CourseSelectionActivity: ActivityComponentType<CourseSelectionActivityPara
     <AppScreen>
       <AnimatePresence mode="wait">
         <CourseListContext.Provider value={selectedCourses}>
-          <div className="flex max-h-screen min-h-screen flex-col gap-15 py-12">
+          <div className="flex max-h-dvh min-h-dvh flex-col gap-15 py-12">
             <AppBar progress={courseSelection[params.type].progress} />
             <motion.div
               key={params.type}
